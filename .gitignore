@@ -1,0 +1,43 @@
+# 1. Python и виртуальное окружение
+venv/
+.venv/
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# 2. Модели нейросетей и графы (YOLO, ONNX, QNN)
+*.pt
+*.onnx
+*.engine
+*.dlc
+*.tflite
+models/*
+!models/.gitkeep
+!models/README.md
+
+# 3. Компьютерное зрение (медиа и датасеты)
+*.mp4
+*.avi
+*.mkv
+*.jpg
+*.jpeg
+*.png
+datasets/
+runs/       
+
+# 4. Артефакты сборки C++ / Arduino / ROS 2
+*.elf
+*.bin
+*.hex
+*.o
+.pio/
+build/
+install/
+log/
+
+# 5. Среды разработки и системный мусор
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db
