@@ -1,12 +1,9 @@
 import cv2
 from threading import Thread, Lock, Event
 import time
-import logging
 import numpy as np
 from typing import Tuple
-
-# Настройка логирования
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+from modules.mpu.logger import get_logger
 
 class CameraStreamer:
 
@@ -24,6 +21,8 @@ class CameraStreamer:
             fps: int = 30
 
         ) -> None:
+
+        self.log = get_logger("CAMERA")
 
         # Инициализация полей
         self.camera_index: int = camera_index
@@ -48,7 +47,7 @@ class CameraStreamer:
         """ Инициализация камеры. 
             Перенесена в отдельный метод, чтобы при восстановлении соединения снова применялось требуемое разрешение. """
         
-        logging.info(f"Инициализация камеры {self.camera_index}...")
+        self.log.info(f"Инициализация камеры {self.camera_index}...")
         
         self._clear_capture()                               # Обнуление захватов
             
@@ -71,7 +70,7 @@ class CameraStreamer:
         self.capture.set(cv2.CAP_PROP_AUTOFOCUS, 0)
 
         if not self._initialised():
-            logging.error(f"Не удалось открыть USB-камеру {self.camera_index}")
+            self.log.error(f"Не удалось открыть USB-камеру {self.camera_index}")
             return False
                 
         return True
@@ -80,8 +79,11 @@ class CameraStreamer:
 
         """ Защита от утечки файловых дескрипторов (зомби-устройств). """
 
-        if self.capture is not None and self.capture.isOpened():
-            self.capture.release()
+        with self.lock:
+            if self.capture is not None: 
+                if self.capture.isOpened():
+                    self.capture.release()
+                self.capture = None
 
     def _initialised(self)   -> bool:
 
@@ -114,13 +116,13 @@ class CameraStreamer:
             else:                        # Логика отказоустойчивости и переподключения
                 failed_reconnection += 1 # Увеличиваем счётчик попыток
                 if failed_reconnection <= 10:
-                    logging.warning(f"Потеряна связь с камерой. Попытка переподключения {failed_reconnection}/10...")
+                    self.log.warning(f"Потеряна связь с камерой. Попытка переподключения {failed_reconnection}/10...")
                     time.sleep(1.0)          # Даем USB-шине время на сброс
                     if not self.is_active:   # Если во время сна поток был остановлен
                         break
                     self._init_camera()      # Пробуем переинициализировать
                 else:
-                    logging.critical("АППАРАТНЫЙ СБОЙ: Камера окончательно потеряна. Остановка видеопотока.")
+                    self.log.critical("АППАРАТНЫЙ СБОЙ: Камера окончательно потеряна. Остановка видеопотока.")
                     self.is_active = False
                     self._clear_capture()
                     break
@@ -139,13 +141,13 @@ class CameraStreamer:
         self.thread = Thread(target=self._update_cycle, daemon=True)
         self.thread.start()
         
-        logging.info("Ожидание получения первого кадра...")
+        self.log.info("Ожидание получения первого кадра...")
         # Ждем захвата первого кадра, чтобы не отдать None в основной цикл
         if not self.frame_ready.wait(timeout=12.0):
             self.stop()
             raise TimeoutError("Камера не отдала кадр за 12 секунд. Проверьте подключение/USB.")
             
-        logging.info("Видеопоток успешно запущен и готов к работе.")
+        self.log.info("Видеопоток успешно запущен и готов к работе.")
         return self
 
     def stop(self)                     -> None:
@@ -155,11 +157,11 @@ class CameraStreamer:
         self.is_active = False
         
         if self.thread is not None and self.thread.is_alive(): # Ожидание завершения фоновых потоков
-            self.thread.join()
+            self.thread.join(timeout=2.0)
         
         self._clear_capture()
             
-        logging.info("Камера аппаратно отключена.")
+        self.log.info("Камера аппаратно отключена.")
 
     def read(self, copy: bool = False) -> Tuple[bool, np.ndarray | None]:
 
